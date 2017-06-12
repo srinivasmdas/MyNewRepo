@@ -1,2 +1,1 @@
-# MyNewRepo
-New repository for testing.
+ Ptyhon-AWS scripts repo 
