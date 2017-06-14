@@ -1,3 +1,4 @@
+
 FROM ubuntu
 ADD sumodockercreation.sh ~/myproject/MyNewRepo/sumodockercreation.sh
 RUN chmod +x ~/myproject/MyNewRepo/sumodockercreation.sh
