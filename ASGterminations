@@ -1,0 +1,84 @@
+#!/usr/bin/python
+import sys
+import os
+import subprocess
+import time
+from datetime import datetime, timedelta
+import getopt
+import re
+import shutil
+import json
+import tempfile
+import platform
+import pprint
+import string
+
+RegionList = ["us-east-1", "us-east-2", "us-west-1", "us-west-2", "ap-southeast-1", "ap-southeast-2", "ap-northeast-1", "ap-northeast-2", "eu-central-1", "eu-west-1", "sa-east-1"]
+
+from collections import defaultdict
+#try:
+#    import readline
+#except:
+#    # Do nothing.  On Windows the readline feature is built in and this throws an exception.
+#    pass
+
+try:
+    import botocore
+    import boto3
+    UseBoto = True
+except:
+    UseBoto = False
+    print "Unable to load Boto.  Please install Botot3"
+    sys.exit(1)
+import boto3
+def listGroups(region):
+    if UseBoto:
+        session = boto3.session.Session(profile_name="default")
+        client = session.client('autoscaling', region_name=region)
+        try:
+            response = client.describe_scaling_activities(MaxRecords=50)
+        except:
+            print "Error listing ASG"
+            sys.exit(1)
+
+
+        pp = pprint.PrettyPrinter(indent=1)
+        #pp.pprint(response)
+
+        #print "Token : " + response["NextToken"]
+        groups= []
+
+        while True:
+            for each in  response['Activities']:
+                if 'Terminating EC2 instance' in each['Description']:
+                    delta_date = datetime.now() - timedelta(days=4)
+                    delta_date1 = '2019-01-02 06:00:00'
+                    delta_date2 = datetime.strptime(delta_date1,'%Y-%m-%d %H:%M:%S')
+                    delta_date3 = '2019-01-03 06:00:00'
+                    delta_date4 = datetime.strptime(delta_date3,'%Y-%m-%d %H:%M:%S')
+                    dbs_date=format(each['StartTime'])
+                    activity_start_time=datetime.strptime(dbs_date[:19],'%Y-%m-%d %H:%M:%S')
+                    if (activity_start_time > delta_date2) and (activity_start_time < delta_date4):
+                        print each['AutoScalingGroupName']+","+each['Description']+","+each['Cause']+","+str(each['StartTime'])+","+str(each['EndTime'])
+
+            try:
+                response = client.describe_scaling_activities(
+                    NextToken=response["NextToken"],
+                    MaxRecords=100
+                    )
+            except:
+                #print "end of list.  Count: " + str(len(groups))
+                break
+
+        #print "Total Count: " + str(len(groups))
+        return groups
+
+def main():
+    global RegionList
+    print "ASG Name, Description, Cause, StartTime, EndTime"
+    for region in RegionList:
+        groups = listGroups(region)
+
+
+if __name__ == "__main__":
+    main()
