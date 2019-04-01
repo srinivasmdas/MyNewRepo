@@ -1,0 +1,28 @@
+#!/bin/bash -v
+# To enforce immutable infrastructure in CloudFormation: e46e61da9a06a45717ebd8ac7024549a
+yum update -y aws-cfn-bootstrap
+export CFN_StackId=arn:aws:cloudformation:us-east-1:484649726801:stack/pe-prod--ROOT-PEGACLOUD-C6990A-CR0004-CorpExpress-us-east-1-PROD-prod1-PegaStreamTier-68ec66af-a5a9-4221-aada-89d2f8a96d54/780bcf20-415b-11e9-9c76-0e8cd4caae34
+export CFN_StackName=pe-prod--ROOT-PEGACLOUD-C6990A-CR0004-CorpExpress-us-east-1-PROD-prod1-PegaStreamTier-68ec66af-a5a9-4221-aada-89d2f8a96d54
+export CFN_Region=us-east-1
+export INSTANCE_ID=$( /opt/aws/bin/ec2-metadata -i | cut -d ' ' -f 2 )
+export AZ=$( /opt/aws/bin/ec2-metadata -z | cut -d ' ' -f 2 )
+export KMS_EBS_Key_ID=arn:aws:kms:us-east-1:484649726801:key/82990437-94bf-497c-83ba-a4688f809a9a
+ENC_ARGS=--no-encrypted
+if ! [ "NONE" = "${KMS_EBS_Key_ID}" ]; then ENC_ARGS="--encrypted --kms-key-id $KMS_EBS_Key_ID"; fi
+VOL_ID=$( aws ec2 create-volume   --region ${CFN_Region} --availability-zone ${AZ}   --volume-type gp2 --size 100 ${ENC_ARGS}  | grep VolumeId | cut -d \" -f 4 )
+aws ec2 create-tags --region ${CFN_Region}  --resources ${VOL_ID} --tags Key=Name,Value='pe-prod--ROOT-PEGACLOUD-C6990A-CR0004-CorpExpress-us-east-1-PROD-prod1-PegaStreamTier-68ec66af-a5a9-4221-aada-89d2f8a96d54 - PEGAStreamHost Volume'
+aws ec2 create-tags --region ${CFN_Region}  --resources ${VOL_ID} --tags Key=CustomerID,Value='C6990A-CR0004-CorpExpress'
+sleep 10
+while ! [ "available" = $(aws ec2 describe-volumes --region ${CFN_Region} --volume-ids ${VOL_ID} --query Volumes[0].State | tr \" ' ' ) ]; do
+   sleep 1;
+done
+aws ec2 attach-volume --region ${CFN_Region}    --volume-id ${VOL_ID} --instance-id ${INSTANCE_ID}   --device /dev/xvdf 
+aws ec2 wait volume-in-use --region ${CFN_Region} --volume-id ${VOL_ID} --filters Name=attachment.status,Values=attached 
+aws ec2 modify-instance-attribute --region ${CFN_Region}   --instance-id $INSTANCE_ID --block-device-mappings   '[{"DeviceName":"/dev/xvdf","Ebs": {"DeleteOnTermination":true} }]'
+while ! [ -r /dev/xvdf ]; do sleep 1; done
+/sbin/mkfs.ext4 /dev/xvdf && mount /dev/xvdf /local
+aws ec2 describe-volumes --region ${CFN_Region} --volume-ids ${VOL_ID} 
+mkdir -p /local/log
+/opt/aws/bin/cfn-init    --stack ${CFN_StackId}    --resource PegaStreamLaunchConfig    --region ${CFN_Region}    --configsets deploy_by_ansible 
+# Signal results.
+/opt/aws/bin/cfn-signal -e $?   --region ${CFN_Region}   --stack "${CFN_StackName}"   --resource `aws ec2 describe-tags --filters "Name=resource-id,Values=${INSTANCE_ID}" "Name=key,Values=aws:cloudformation:logical-id" --region ${CFN_Region} --output=text | cut -f5`   --reason "CFN config setup exited with value $?." 
