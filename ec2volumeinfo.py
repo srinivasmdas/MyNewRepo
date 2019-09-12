@@ -16,4 +16,4 @@ for v in vol_dict:
         vol_status = st_vol['State']
         vol_id = st_vol['VolumeId']
         instance = st_vol['InstanceId']
-        print(vol_status , vol_id, instance)
+    print(vol_status , vol_id, instance)
